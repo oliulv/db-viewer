@@ -10,6 +10,35 @@ import {
 import { existsSync } from "fs";
 import { join, dirname } from "path";
 
+async function isPortAvailable(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const server = Bun.serve({
+      port,
+      fetch() {
+        return new Response("");
+      },
+    });
+    server.stop();
+    resolve(true);
+  });
+}
+
+async function findAvailablePort(startPort: number, maxAttempts: number = 10): Promise<number> {
+  for (let i = 0; i < maxAttempts; i++) {
+    const port = startPort + i;
+    try {
+      const available = await isPortAvailable(port);
+      if (available) return port;
+    } catch {
+      // Port is in use, try next
+      continue;
+    }
+  }
+  throw new Error(
+    `Could not find available port after ${maxAttempts} attempts starting from ${startPort}`
+  );
+}
+
 function getWebDir(): string {
   // Resolve relative to this file's location
   const currentDir = dirname(new URL(import.meta.url).pathname);
@@ -40,7 +69,7 @@ function getContentType(filePath: string): string {
   return "text/plain";
 }
 
-export function startServer(config: ServerConfig): void {
+export async function startServer(config: ServerConfig): Promise<void> {
   // Parse files
   const context: ServerContext = {
     schema: null,
@@ -68,8 +97,20 @@ export function startServer(config: ServerConfig): void {
     }
   }
 
+  // Find an available port
+  let port: number;
+  try {
+    port = await findAvailablePort(config.port);
+    if (port !== config.port) {
+      console.log(`Port ${config.port} is in use, using port ${port} instead`);
+    }
+  } catch (error) {
+    console.error(`Error: ${error instanceof Error ? error.message : error}`);
+    process.exit(1);
+  }
+
   const server = Bun.serve({
-    port: config.port,
+    port,
     fetch(req) {
       const url = new URL(req.url);
       const path = url.pathname;

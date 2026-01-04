@@ -9,4 +9,4 @@ console.log("db-viewer starting...");
 console.log("Schema file:", config.schemaPath || "(not found)");
 console.log("Functions file:", config.functionsPath || "(not found)");
 
-startServer(config);
+await startServer(config);
