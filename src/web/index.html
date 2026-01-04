@@ -10,11 +10,22 @@
     <div id="app">
       <header>
         <h1>db-viewer</h1>
+        <div class="tabs">
+          <button class="tab active" data-tab="schema">Schema</button>
+          <button class="tab" data-tab="functions">Functions</button>
+        </div>
         <span id="info"></span>
       </header>
-      <main>
-        <p>Loading...</p>
-      </main>
+
+      <div class="container">
+        <aside class="sidebar">
+          <div id="sidebar-content"></div>
+        </aside>
+
+        <main id="main-content">
+          <div class="empty-state">Select an item from the sidebar</div>
+        </main>
+      </div>
     </div>
     <script src="app.js"></script>
   </body>

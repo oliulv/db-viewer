@@ -1,8 +1,6 @@
 {
   "permissions": {
-    "allow": [
-      "Bash(timeout 3 bun run:*)"
-    ],
+    "allow": ["Bash(timeout 3 bun run:*)"],
     "deny": [],
     "ask": []
   }
