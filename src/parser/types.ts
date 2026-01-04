@@ -52,6 +52,7 @@ export interface ParsedFunction {
   sqlQueries: ExtractedQuery[];
   tablesUsed: string[];
   isExported: boolean;
+  description?: string;
 }
 
 export interface ParsedFunctions {
