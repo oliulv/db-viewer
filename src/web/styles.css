@@ -371,7 +371,18 @@ main {
 }
 
 .relationship-arrow {
-  fill: var(--text-muted);
+  fill: var(--accent);
+}
+
+.relationship-dot {
+  fill: var(--accent);
+}
+
+.relationship-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  opacity: 0.6;
 }
 
 .diagram-tables {

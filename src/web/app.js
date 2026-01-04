@@ -73,7 +73,6 @@ function renderSidebar() {
 
 function renderSchemaSidebar() {
   const tables = state.schema?.tables || [];
-  const relationships = state.relationships?.relationships || [];
 
   let html = '<div class="sidebar-section">';
   html += "<h3>Tables</h3>";
@@ -89,27 +88,6 @@ function renderSchemaSidebar() {
   }
 
   html += "</div>";
-
-  // Relationships section
-  if (relationships.length > 0) {
-    html += '<div class="sidebar-section">';
-    html += "<h3>Relationships</h3>";
-
-    const groupedRels = {};
-    for (const rel of relationships) {
-      if (!groupedRels[rel.fromTable]) groupedRels[rel.fromTable] = [];
-      groupedRels[rel.fromTable].push(rel);
-    }
-
-    for (const [table, rels] of Object.entries(groupedRels)) {
-      html += `<div class="sidebar-item" onclick="selectTable('${table}')">`;
-      html += `<span class="name">${table}</span>`;
-      html += `<span class="badge">${rels.length}</span>`;
-      html += "</div>";
-    }
-
-    html += "</div>";
-  }
 
   // View toggle
   html += '<div class="sidebar-section">';
@@ -252,9 +230,25 @@ function drawRelationshipLines(relationships) {
   const container = document.getElementById("diagram-container");
   if (!container) return;
 
+  // Clear previous lines
   svg.innerHTML = "";
-  svg.setAttribute("width", container.scrollWidth);
-  svg.setAttribute("height", container.scrollHeight);
+
+  // Calculate the total bounds needed for all tables
+  const tables = container.querySelectorAll(".diagram-table");
+  let maxX = 800,
+    maxY = 600;
+  tables.forEach((table) => {
+    const rect = table.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+    const right = rect.right - containerRect.left + container.scrollLeft;
+    const bottom = rect.bottom - containerRect.top + container.scrollTop;
+    maxX = Math.max(maxX, right + 50);
+    maxY = Math.max(maxY, bottom + 50);
+  });
+
+  svg.style.width = maxX + "px";
+  svg.style.height = maxY + "px";
+  svg.setAttribute("viewBox", `0 0 ${maxX} ${maxY}`);
 
   for (const rel of relationships) {
     const fromTable = document.querySelector(`[data-table="${rel.fromTable}"]`);
@@ -262,54 +256,101 @@ function drawRelationshipLines(relationships) {
 
     if (!fromTable || !toTable) continue;
 
+    // Get positions relative to the diagram container
+    const fromPos = state.tablePositions[rel.fromTable];
+    const toPos = state.tablePositions[rel.toTable];
+
+    if (!fromPos || !toPos) continue;
+
     const fromRect = fromTable.getBoundingClientRect();
     const toRect = toTable.getBoundingClientRect();
-    const containerRect = container.getBoundingClientRect();
 
-    // Column positions could be used for more precise line positioning in the future
-    const _fromCol = fromTable.querySelector(`.diagram-column-name:contains("${rel.fromColumn}")`);
-    const _toCol = toTable.querySelector(`.diagram-column-name:contains("${rel.toColumn}")`);
+    // Find the specific column rows for more precise connections
+    const fromColumns = fromTable.querySelectorAll(".diagram-column");
+    const toColumns = toTable.querySelectorAll(".diagram-column");
 
-    // Calculate connection points
-    let fromX, fromY, toX, toY;
+    let fromColIndex = 0,
+      toColIndex = 0;
+    fromColumns.forEach((col, i) => {
+      if (col.querySelector(".diagram-column-name")?.textContent === rel.fromColumn) {
+        fromColIndex = i;
+      }
+    });
+    toColumns.forEach((col, i) => {
+      if (col.querySelector(".diagram-column-name")?.textContent === rel.toColumn) {
+        toColIndex = i;
+      }
+    });
 
-    // Simple center-to-center calculation with edge detection
-    const fromCenterX = fromRect.left + fromRect.width / 2 - containerRect.left;
-    const _fromCenterY = fromRect.top + fromRect.height / 2 - containerRect.top;
-    const toCenterX = toRect.left + toRect.width / 2 - containerRect.left;
-    const _toCenterY = toRect.top + toRect.height / 2 - containerRect.top;
+    // Calculate Y positions based on column index (header height ~32px, row height ~28px)
+    const headerHeight = 32;
+    const rowHeight = 28;
+    const fromColY = fromPos.y + headerHeight + fromColIndex * rowHeight + rowHeight / 2;
+    const toColY = toPos.y + headerHeight + toColIndex * rowHeight + rowHeight / 2;
 
-    // Determine which edges to connect
-    if (fromCenterX < toCenterX) {
-      fromX = fromRect.right - containerRect.left;
-      toX = toRect.left - containerRect.left;
+    // Calculate X positions based on table positions
+    const fromWidth = fromRect.width;
+    const toWidth = toRect.width;
+
+    let fromX, toX;
+
+    // Determine which sides to connect
+    if (fromPos.x + fromWidth < toPos.x) {
+      // From table is to the left
+      fromX = fromPos.x + fromWidth;
+      toX = toPos.x;
+    } else if (toPos.x + toWidth < fromPos.x) {
+      // From table is to the right
+      fromX = fromPos.x;
+      toX = toPos.x + toWidth;
     } else {
-      fromX = fromRect.left - containerRect.left;
-      toX = toRect.right - containerRect.left;
+      // Tables overlap horizontally, connect on closest sides
+      const fromCenter = fromPos.x + fromWidth / 2;
+      const toCenter = toPos.x + toWidth / 2;
+      if (fromCenter < toCenter) {
+        fromX = fromPos.x + fromWidth;
+        toX = toPos.x;
+      } else {
+        fromX = fromPos.x;
+        toX = toPos.x + toWidth;
+      }
     }
 
-    fromY = fromRect.top + fromRect.height / 2 - containerRect.top;
-    toY = toRect.top + toRect.height / 2 - containerRect.top;
-
-    // Draw a curved line
-    const midX = (fromX + toX) / 2;
+    // Draw a curved bezier line
+    const controlOffset = Math.min(80, Math.abs(toX - fromX) / 2);
     const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    path.setAttribute("d", `M ${fromX} ${fromY} C ${midX} ${fromY}, ${midX} ${toY}, ${toX} ${toY}`);
+
+    // Create a smooth S-curve
+    const c1x = fromX + (fromX < toX ? controlOffset : -controlOffset);
+    const c2x = toX + (fromX < toX ? -controlOffset : controlOffset);
+
+    path.setAttribute(
+      "d",
+      `M ${fromX} ${fromColY} C ${c1x} ${fromColY}, ${c2x} ${toColY}, ${toX} ${toColY}`
+    );
     path.setAttribute("class", "relationship-line");
     path.setAttribute("data-from", rel.fromTable);
     path.setAttribute("data-to", rel.toTable);
     svg.appendChild(path);
 
-    // Add arrow marker at the end
+    // Add arrow marker at the end pointing to the target
     const arrowSize = 6;
     const arrow = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
     const arrowDir = fromX < toX ? 1 : -1;
     arrow.setAttribute(
       "points",
-      `${toX},${toY} ${toX - arrowDir * arrowSize},${toY - arrowSize} ${toX - arrowDir * arrowSize},${toY + arrowSize}`
+      `${toX},${toColY} ${toX - arrowDir * arrowSize * 1.5},${toColY - arrowSize} ${toX - arrowDir * arrowSize * 1.5},${toColY + arrowSize}`
     );
     arrow.setAttribute("class", "relationship-arrow");
     svg.appendChild(arrow);
+
+    // Add a small circle at the start (FK side)
+    const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    circle.setAttribute("cx", fromX);
+    circle.setAttribute("cy", fromColY);
+    circle.setAttribute("r", 4);
+    circle.setAttribute("class", "relationship-dot");
+    svg.appendChild(circle);
   }
 }
 
