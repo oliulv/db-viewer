@@ -264,29 +264,41 @@ function drawRelationshipLines(relationships) {
 
     const fromRect = fromTable.getBoundingClientRect();
     const toRect = toTable.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
 
-    // Find the specific column rows for more precise connections
+    // Find the specific column elements
     const fromColumns = fromTable.querySelectorAll(".diagram-column");
     const toColumns = toTable.querySelectorAll(".diagram-column");
 
-    let fromColIndex = 0,
-      toColIndex = 0;
-    fromColumns.forEach((col, i) => {
+    let fromColEl = null,
+      toColEl = null;
+    fromColumns.forEach((col) => {
       if (col.querySelector(".diagram-column-name")?.textContent === rel.fromColumn) {
-        fromColIndex = i;
+        fromColEl = col;
       }
     });
-    toColumns.forEach((col, i) => {
+    toColumns.forEach((col) => {
       if (col.querySelector(".diagram-column-name")?.textContent === rel.toColumn) {
-        toColIndex = i;
+        toColEl = col;
       }
     });
 
-    // Calculate Y positions based on column index (header height ~32px, row height ~28px)
-    const headerHeight = 32;
-    const rowHeight = 28;
-    const fromColY = fromPos.y + headerHeight + fromColIndex * rowHeight + rowHeight / 2;
-    const toColY = toPos.y + headerHeight + toColIndex * rowHeight + rowHeight / 2;
+    // Calculate Y positions from actual element positions
+    let fromColY, toColY;
+
+    if (fromColEl) {
+      const fromColRect = fromColEl.getBoundingClientRect();
+      fromColY = fromColRect.top + fromColRect.height / 2 - containerRect.top + container.scrollTop;
+    } else {
+      fromColY = fromPos.y + 50; // fallback
+    }
+
+    if (toColEl) {
+      const toColRect = toColEl.getBoundingClientRect();
+      toColY = toColRect.top + toColRect.height / 2 - containerRect.top + container.scrollTop;
+    } else {
+      toColY = toPos.y + 50; // fallback
+    }
 
     // Calculate X positions based on table positions
     const fromWidth = fromRect.width;
