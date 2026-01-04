@@ -1,0 +1,32 @@
+{
+  "name": "db-viewer",
+  "version": "1.0.0",
+  "description": "A CLI tool that parses your schema.ts and index.ts files and spins up a local web UI to visualize your database schema and query functions.",
+  "type": "module",
+  "bin": {
+    "db-viewer": "./bin/db-viewer.ts"
+  },
+  "scripts": {
+    "dev": "bun run bin/db-viewer.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . && prettier --check .",
+    "lint:fix": "eslint --fix . && prettier --write .",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5",
+    "@typescript-eslint/eslint-plugin": "^8",
+    "@typescript-eslint/parser": "^8",
+    "eslint": "^9",
+    "prettier": "^3"
+  },
+  "keywords": [
+    "sqlite",
+    "database",
+    "viewer",
+    "bun",
+    "cli"
+  ],
+  "license": "MIT"
+}
