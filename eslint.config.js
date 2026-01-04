@@ -8,6 +8,17 @@ export default [
   },
   eslint.configs.recommended,
   {
+    files: ["src/web/**/*.js"],
+    languageOptions: {
+      globals: {
+        document: "readonly",
+        fetch: "readonly",
+        window: "readonly",
+        console: "readonly",
+      },
+    },
+  },
+  {
     files: ["**/*.ts"],
     languageOptions: {
       parser: tsparser,
