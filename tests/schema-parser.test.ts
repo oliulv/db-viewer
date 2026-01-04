@@ -115,29 +115,3 @@ describe("parseSchemaFile", () => {
     expect(posts!.primaryKey).toEqual(["id"]);
   });
 });
-
-describe("parseSchemaFile with conflict-guard", () => {
-  it("should parse the real conflict-guard schema", () => {
-    const schema = parseSchemaFile("/Users/oliulv/Code/startups/conflict-guard/src/db/schema.ts");
-
-    expect(schema.tables.length).toBe(3);
-
-    const tableNames = schema.tables.map((t) => t.name).sort();
-    expect(tableNames).toEqual(["agents", "file_changes", "pause_queue"]);
-
-    // Check agents table
-    const agents = schema.tables.find((t) => t.name === "agents");
-    expect(agents?.columns.length).toBe(7);
-    expect(agents?.primaryKey).toEqual(["id"]);
-
-    // Check file_changes table
-    const fileChanges = schema.tables.find((t) => t.name === "file_changes");
-    expect(fileChanges?.foreignKeys.length).toBe(1);
-    expect(fileChanges?.indexes.length).toBe(2);
-
-    // Check pause_queue table
-    const pauseQueue = schema.tables.find((t) => t.name === "pause_queue");
-    expect(pauseQueue?.foreignKeys.length).toBe(2);
-    expect(pauseQueue?.indexes.length).toBe(1);
-  });
-});

@@ -154,22 +154,3 @@ describe("parseFunctionsFile", () => {
     expect(rowToUser!.isExported).toBe(false);
   });
 });
-
-describe("parseFunctionsFile with conflict-guard", () => {
-  it("should parse the real conflict-guard functions", () => {
-    const result = parseFunctionsFile("/Users/oliulv/Code/startups/conflict-guard/src/db/index.ts");
-
-    const exportedFunctions = result.functions.filter((f) => f.isExported);
-    expect(exportedFunctions.length).toBeGreaterThan(10);
-
-    // Check specific functions
-    const registerAgent = result.functions.find((f) => f.name === "registerAgent");
-    expect(registerAgent).toBeDefined();
-    expect(registerAgent!.isExported).toBe(true);
-    expect(registerAgent!.tablesUsed).toContain("agents");
-
-    const getUncommittedChanges = result.functions.find((f) => f.name === "getUncommittedChanges");
-    expect(getUncommittedChanges).toBeDefined();
-    expect(getUncommittedChanges!.tablesUsed).toContain("file_changes");
-  });
-});

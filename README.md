@@ -21,7 +21,7 @@ bun run dev
 ### Install globally
 
 ```bash
-bun install -g .
+bun link
 ```
 
 Then run from any project:
