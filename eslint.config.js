@@ -15,7 +15,11 @@ export default [
         fetch: "readonly",
         window: "readonly",
         console: "readonly",
+        requestAnimationFrame: "readonly",
       },
+    },
+    rules: {
+      "no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
     },
   },
   {

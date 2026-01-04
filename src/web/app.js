@@ -5,6 +5,8 @@ const state = {
   functions: null,
   relationships: null,
   selectedItem: null,
+  diagramMode: true, // Start with diagram view for schema
+  tablePositions: {}, // Store draggable table positions
 };
 
 // DOM Elements
@@ -37,6 +39,7 @@ async function init() {
 
   // Render initial view
   renderSidebar();
+  renderSchemaDiagram();
 }
 
 function switchTab(tab) {
@@ -45,7 +48,19 @@ function switchTab(tab) {
 
   tabs.forEach((t) => t.classList.toggle("active", t.dataset.tab === tab));
   renderSidebar();
-  mainContent.innerHTML = '<div class="empty-state">Select an item from the sidebar</div>';
+
+  if (tab === "schema") {
+    state.diagramMode = true;
+    renderSchemaDiagram();
+  } else {
+    // Auto-select first function
+    const functions = state.functions?.functions?.filter((f) => f.isExported) || [];
+    if (functions.length > 0) {
+      selectFunction(functions[0].name);
+    } else {
+      mainContent.innerHTML = '<div class="empty-state">No exported functions found</div>';
+    }
+  }
 }
 
 function renderSidebar() {
@@ -64,7 +79,7 @@ function renderSchemaSidebar() {
   html += "<h3>Tables</h3>";
 
   for (const table of tables) {
-    const isActive = state.selectedItem === table.name;
+    const isActive = state.selectedItem === table.name && !state.diagramMode;
     html += `
       <div class="sidebar-item ${isActive ? "active" : ""}" onclick="selectTable('${table.name}')">
         <span class="name">${table.name}</span>
@@ -87,7 +102,7 @@ function renderSchemaSidebar() {
     }
 
     for (const [table, rels] of Object.entries(groupedRels)) {
-      html += `<div class="sidebar-item" style="cursor: default;">`;
+      html += `<div class="sidebar-item" onclick="selectTable('${table}')">`;
       html += `<span class="name">${table}</span>`;
       html += `<span class="badge">${rels.length}</span>`;
       html += "</div>";
@@ -95,6 +110,14 @@ function renderSchemaSidebar() {
 
     html += "</div>";
   }
+
+  // View toggle
+  html += '<div class="sidebar-section">';
+  html += "<h3>View</h3>";
+  html += `<div class="sidebar-item ${state.diagramMode ? "active" : ""}" onclick="showDiagram()">`;
+  html += `<span class="name">Diagram</span>`;
+  html += "</div>";
+  html += "</div>";
 
   sidebar.innerHTML = html;
 }
@@ -119,8 +142,234 @@ function renderFunctionsSidebar() {
   sidebar.innerHTML = html;
 }
 
+function showDiagram() {
+  state.diagramMode = true;
+  state.selectedItem = null;
+  renderSidebar();
+  renderSchemaDiagram();
+}
+
+function renderSchemaDiagram() {
+  const tables = state.schema?.tables || [];
+  const relationships = state.relationships?.relationships || [];
+
+  if (tables.length === 0) {
+    mainContent.innerHTML = '<div class="empty-state">No tables found</div>';
+    return;
+  }
+
+  // Initialize positions if not set
+  if (Object.keys(state.tablePositions).length === 0) {
+    initializeTablePositions(tables);
+  }
+
+  let html = `
+    <div class="diagram-container" id="diagram-container">
+      <svg class="diagram-lines" id="diagram-lines"></svg>
+      <div class="diagram-tables" id="diagram-tables">
+  `;
+
+  for (const table of tables) {
+    const pos = state.tablePositions[table.name] || { x: 0, y: 0 };
+    html += renderDiagramTable(table, pos, relationships);
+  }
+
+  html += `
+      </div>
+    </div>
+  `;
+
+  mainContent.innerHTML = html;
+
+  // Draw relationship lines
+  requestAnimationFrame(() => {
+    drawRelationshipLines(relationships);
+    setupDragHandlers();
+  });
+}
+
+function initializeTablePositions(tables) {
+  const cols = Math.ceil(Math.sqrt(tables.length));
+  const spacingX = 320;
+  const spacingY = 280;
+
+  tables.forEach((table, i) => {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    state.tablePositions[table.name] = {
+      x: 40 + col * spacingX,
+      y: 40 + row * spacingY,
+    };
+  });
+}
+
+function renderDiagramTable(table, pos, relationships) {
+  const tableFKs = relationships.filter((r) => r.fromTable === table.name);
+
+  let html = `
+    <div class="diagram-table" data-table="${table.name}" style="left: ${pos.x}px; top: ${pos.y}px;">
+      <div class="diagram-table-header" onmousedown="startDrag(event, '${table.name}')">
+        <span class="diagram-table-icon">&#9634;</span>
+        <span class="diagram-table-name">${table.name}</span>
+        <span class="diagram-table-expand" onclick="selectTable('${table.name}')" title="View details">&#8599;</span>
+      </div>
+      <div class="diagram-table-columns">
+  `;
+
+  for (const col of table.columns) {
+    const isPK = col.isPrimaryKey;
+    const isFK = tableFKs.some((fk) => fk.fromColumn === col.name);
+    const isUnique = table.indexes?.some((idx) => idx.isUnique && idx.columns.includes(col.name));
+
+    let icons = "";
+    if (isPK) icons += '<span class="col-icon pk" title="Primary Key">&#128273;</span>';
+    if (isFK) icons += '<span class="col-icon fk" title="Foreign Key">&#128279;</span>';
+    if (isUnique && !isPK) icons += '<span class="col-icon unique" title="Unique">&#9670;</span>';
+
+    const nullable = col.nullable ? "nullable" : "not-null";
+
+    html += `
+      <div class="diagram-column ${nullable}">
+        <span class="diagram-column-icons">${icons}</span>
+        <span class="diagram-column-name">${col.name}</span>
+        <span class="diagram-column-type">${col.type.toLowerCase()}</span>
+      </div>
+    `;
+  }
+
+  html += `
+      </div>
+    </div>
+  `;
+
+  return html;
+}
+
+function drawRelationshipLines(relationships) {
+  const svg = document.getElementById("diagram-lines");
+  if (!svg) return;
+
+  const container = document.getElementById("diagram-container");
+  if (!container) return;
+
+  svg.innerHTML = "";
+  svg.setAttribute("width", container.scrollWidth);
+  svg.setAttribute("height", container.scrollHeight);
+
+  for (const rel of relationships) {
+    const fromTable = document.querySelector(`[data-table="${rel.fromTable}"]`);
+    const toTable = document.querySelector(`[data-table="${rel.toTable}"]`);
+
+    if (!fromTable || !toTable) continue;
+
+    const fromRect = fromTable.getBoundingClientRect();
+    const toRect = toTable.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+
+    // Column positions could be used for more precise line positioning in the future
+    const _fromCol = fromTable.querySelector(`.diagram-column-name:contains("${rel.fromColumn}")`);
+    const _toCol = toTable.querySelector(`.diagram-column-name:contains("${rel.toColumn}")`);
+
+    // Calculate connection points
+    let fromX, fromY, toX, toY;
+
+    // Simple center-to-center calculation with edge detection
+    const fromCenterX = fromRect.left + fromRect.width / 2 - containerRect.left;
+    const _fromCenterY = fromRect.top + fromRect.height / 2 - containerRect.top;
+    const toCenterX = toRect.left + toRect.width / 2 - containerRect.left;
+    const _toCenterY = toRect.top + toRect.height / 2 - containerRect.top;
+
+    // Determine which edges to connect
+    if (fromCenterX < toCenterX) {
+      fromX = fromRect.right - containerRect.left;
+      toX = toRect.left - containerRect.left;
+    } else {
+      fromX = fromRect.left - containerRect.left;
+      toX = toRect.right - containerRect.left;
+    }
+
+    fromY = fromRect.top + fromRect.height / 2 - containerRect.top;
+    toY = toRect.top + toRect.height / 2 - containerRect.top;
+
+    // Draw a curved line
+    const midX = (fromX + toX) / 2;
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", `M ${fromX} ${fromY} C ${midX} ${fromY}, ${midX} ${toY}, ${toX} ${toY}`);
+    path.setAttribute("class", "relationship-line");
+    path.setAttribute("data-from", rel.fromTable);
+    path.setAttribute("data-to", rel.toTable);
+    svg.appendChild(path);
+
+    // Add arrow marker at the end
+    const arrowSize = 6;
+    const arrow = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+    const arrowDir = fromX < toX ? 1 : -1;
+    arrow.setAttribute(
+      "points",
+      `${toX},${toY} ${toX - arrowDir * arrowSize},${toY - arrowSize} ${toX - arrowDir * arrowSize},${toY + arrowSize}`
+    );
+    arrow.setAttribute("class", "relationship-arrow");
+    svg.appendChild(arrow);
+  }
+}
+
+// Drag handling
+let dragState = null;
+
+function startDrag(event, tableName) {
+  if (event.target.classList.contains("diagram-table-expand")) return;
+
+  event.preventDefault();
+  const _tableEl = document.querySelector(`[data-table="${tableName}"]`);
+  const _container = document.getElementById("diagram-container");
+  const _containerRect = _container.getBoundingClientRect();
+
+  dragState = {
+    tableName,
+    startX: event.clientX,
+    startY: event.clientY,
+    initialX: state.tablePositions[tableName].x,
+    initialY: state.tablePositions[tableName].y,
+  };
+
+  document.addEventListener("mousemove", onDrag);
+  document.addEventListener("mouseup", endDrag);
+}
+
+function onDrag(event) {
+  if (!dragState) return;
+
+  const deltaX = event.clientX - dragState.startX;
+  const deltaY = event.clientY - dragState.startY;
+
+  const newX = Math.max(0, dragState.initialX + deltaX);
+  const newY = Math.max(0, dragState.initialY + deltaY);
+
+  state.tablePositions[dragState.tableName] = { x: newX, y: newY };
+
+  const tableEl = document.querySelector(`[data-table="${dragState.tableName}"]`);
+  if (tableEl) {
+    tableEl.style.left = newX + "px";
+    tableEl.style.top = newY + "px";
+  }
+
+  // Redraw lines
+  drawRelationshipLines(state.relationships?.relationships || []);
+}
+
+function endDrag() {
+  dragState = null;
+  document.removeEventListener("mousemove", onDrag);
+  document.removeEventListener("mouseup", endDrag);
+}
+
+function setupDragHandlers() {
+  // Already handled by inline onmousedown
+}
+
 function selectTable(name) {
   state.selectedItem = name;
+  state.diagramMode = false;
   renderSidebar();
 
   const table = state.schema?.tables?.find((t) => t.name === name);
@@ -134,6 +383,7 @@ function selectTable(name) {
     <div class="content-header">
       <h2>${table.name}</h2>
       <div class="subtitle">${table.columns.length} columns, ${table.indexes.length} indexes</div>
+      <button class="back-btn" onclick="showDiagram()">&#8592; Back to Diagram</button>
     </div>
   `;
 
@@ -182,7 +432,7 @@ function selectTable(name) {
         <div class="relationship">
           <span class="column-name">${fk.column}</span>
           <span class="arrow">-></span>
-          <span class="table-name">${fk.referencesTable}</span>.<span class="column-name">${fk.referencesColumn}</span>
+          <span class="table-name clickable" onclick="selectTable('${fk.referencesTable}')">${fk.referencesTable}</span>.<span class="column-name">${fk.referencesColumn}</span>
           ${fk.onDelete ? `<span class="tag tag-muted">ON DELETE ${fk.onDelete}</span>` : ""}
         </div>
       `;
@@ -218,7 +468,7 @@ function selectTable(name) {
     for (const rel of incomingRels) {
       html += `
         <div class="relationship">
-          <span class="table-name">${rel.fromTable}</span>.<span class="column-name">${rel.fromColumn}</span>
+          <span class="table-name clickable" onclick="selectTable('${rel.fromTable}')">${rel.fromTable}</span>.<span class="column-name">${rel.fromColumn}</span>
           <span class="arrow">-></span>
           <span class="column-name">${rel.toColumn}</span>
         </div>
@@ -266,7 +516,7 @@ function selectFunction(name) {
     html += '<div class="section-title">Tables Used</div>';
     html += '<div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">';
     for (const table of func.tablesUsed) {
-      html += `<span class="tag tag-primary">${table}</span>`;
+      html += `<span class="tag tag-primary clickable" onclick="switchToSchemaAndSelect('${table}')">${table}</span>`;
     }
     html += "</div></div>";
   }
@@ -289,6 +539,12 @@ function selectFunction(name) {
   }
 
   mainContent.innerHTML = html;
+}
+
+function switchToSchemaAndSelect(tableName) {
+  state.currentTab = "schema";
+  tabs.forEach((t) => t.classList.toggle("active", t.dataset.tab === "schema"));
+  selectTable(tableName);
 }
 
 function getQueryTypeClass(type) {
@@ -319,6 +575,9 @@ function escapeHtml(str) {
 // Expose functions to global scope for onclick handlers
 window.selectTable = selectTable;
 window.selectFunction = selectFunction;
+window.showDiagram = showDiagram;
+window.startDrag = startDrag;
+window.switchToSchemaAndSelect = switchToSchemaAndSelect;
 
 // Start the app
 init();
